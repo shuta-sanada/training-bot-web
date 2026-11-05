@@ -66,6 +66,9 @@ cancelButton.onclick=async()=>{
  try{const result=await request('cancelPoll');cancelButton.hidden=true;show(result.message+'\nトークで @bot を送ると、新しく始められます。',false);notify(result.message);}
  catch(error){notify(error.message,true);show(error.message,true);cancelButton.disabled=false;cancelButton.textContent='この出欠確認を取り消す';}
 };
-document.getElementById('close').onclick=()=>{if(window.liff&&liff.isInClient())liff.closeWindow();else show('この画面を閉じてLINEのトークに戻ってください。',false);};
+document.getElementById('close').onclick=async()=>{
+ if(!section.hidden){try{await request('finish',{session:context.session});}catch(error){}}
+ if(window.liff&&liff.isInClient())liff.closeWindow();else show('この画面を閉じてLINEのトークに戻ってください。',false);
+};
 init();
 </script></body></html>
