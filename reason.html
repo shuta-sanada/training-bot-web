@@ -38,7 +38,7 @@ async function init(){
   document.getElementById('schedule').textContent=info.label;mark(info.choice);
   if(info.locked){show('あなたは起票者のため、参加で確定しています。回答は変更できません。',false);cancelButton.hidden=false;return;}
   buttons.forEach(b=>b.disabled=false);
- }catch(error){show(error.message,true);}
+ }catch(error){show(error.message+(error.code?' ['+error.code+']':''),true);}
 }
 async function choose(choice){
  buttons.forEach(b=>b.disabled=true);
