@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>出欠回答</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f5f8;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",sans-serif;color:#272333}main{max-width:440px;margin:36px auto;padding:24px}small{color:#06a24a;font-weight:700}h1{font-size:26px;margin:12px 0}p{line-height:1.8;color:#666;font-size:14px}label{display:block;font-weight:600;margin:26px 0 10px}textarea,input[type=text]{width:100%;height:150px;border:1px solid #dcd7e5;border-radius:12px;padding:14px;font:inherit;resize:vertical}button{width:100%;border:0;border-radius:10px;padding:15px;font:inherit;cursor:pointer;margin-top:12px;background:#06c755;color:#fff}button.secondary{background:#eee;color:#555}button:disabled{opacity:.5;cursor:wait}#message{white-space:pre-wrap;font-size:14px;line-height:1.7;margin-top:18px}.error{color:#b52e42}.success{color:#18764a}#count{text-align:right;font-size:12px;color:#888;margin:6px 0}
+#choices{display:flex;gap:8px}#choices button{margin-top:0;background:#fff;color:#287cbd;border:2px solid #dcd7e5;font-weight:600}#choices button.selected{border-color:#06c755;background:#e9f9ef;color:#18764a}
+#toast{position:fixed;left:50%;bottom:36px;transform:translate(-50%,20px);max-width:calc(100% - 48px);background:#272333;color:#fff;font-size:14px;line-height:1.6;padding:12px 20px;border-radius:24px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}#toast.show{opacity:.95;transform:translate(-50%,0)}#toast.error{background:#b52e42}
+[hidden]{display:none!important}
+</style></head>
+<body><main><h1>参加有無</h1><p id="schedule">読み込み中…</p>
+<div id="choices"><button type="button" data-choice="yes" disabled>参加</button><button type="button" data-choice="no" disabled>欠席</button><button type="button" data-choice="maybe" disabled>未定</button></div>
+<section id="reason-section" hidden><form id="form"><label for="reason">欠席理由（任意）</label><textarea id="reason" disabled placeholder="バイトのため"></textarea><div id="count">0 / 200文字</div><label for="altWhen">代わりに行く日時（任意）</label><input type="text" id="altWhen" maxlength="50" disabled placeholder="11/8（土）19:00"><button id="save" disabled>保存する</button></form></section>
+<button class="secondary" id="close">キャンセル</button><div id="message" role="status"></div></main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script src="config.js"></script><script>
+let context,version,toastTimer;
+const field=document.getElementById('reason'),alt=document.getElementById('altWhen'),save=document.getElementById('save'),message=document.getElementById('message'),toast=document.getElementById('toast'),section=document.getElementById('reason-section'),buttons=[...document.querySelectorAll('#choices button')];
+const labels={yes:'参加',no:'欠席',maybe:'未定'};
+function show(text,error){message.textContent=text;message.className=error?'error':'success';}
+function notify(text,error){toast.textContent=text;toast.className='show'+(error?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>{toast.className='';},2500);}
+function mark(choice){buttons.forEach(b=>b.classList.toggle('selected',b.dataset.choice===choice));}
+async function request(operation,extra={}){
+ const response=await fetch(window.TRAINING_BOT_CONFIG.apiUrl,{method:'POST',redirect:'follow',credentials:'omit',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify({action:'reasonForm',operation,...context,idToken:liff.getIDToken(),...extra})});
+ if(!response.ok)throw new Error('通信できませんでした。時間をおいて試してください。');
+ const result=await response.json();if(!result.ok)throw new Error(result.message);return result;
+}
+async function init(){
+ try{
+  const config=window.TRAINING_BOT_CONFIG;
+  if(!config||!config.liffId||!/^https:\/\//.test(config.apiUrl))throw new Error('回答画面は準備中です。');
+  await liff.init({liffId:config.liffId});
+  if(!liff.isLoggedIn()){liff.login({redirectUri:location.href});return;}
+  const params=new URLSearchParams(location.search);
+  context={groupId:params.get('group'),pollId:params.get('poll'),session:params.get('session')};
+  if(!context.groupId||!context.pollId||!context.session)throw new Error('LINEの最新の出欠カードから開いてください。');
+  const info=await request('info');
+  document.getElementById('schedule').textContent=info.label;mark(info.choice);
+  if(info.locked){show('あなたは起票者のため、参加で確定しています。回答は変更できません。',false);return;}
+  buttons.forEach(b=>b.disabled=false);
+ }catch(error){show(error.message,true);}
+}
+async function choose(choice){
+ buttons.forEach(b=>b.disabled=true);
+ try{
+  const result=await request('answer',{choice});
+  mark(choice);
+  if(choice==='no'){
+   context.session=result.session;version=result.version;field.value=result.reason;alt.value=result.altWhen||'';field.disabled=false;alt.disabled=false;save.disabled=false;section.hidden=false;updateCount();
+  }else{section.hidden=true;}
+  show('',false);notify(labels[choice]+'で登録しました');
+ }catch(error){notify(error.message,true);show(error.message,true);}
+ finally{buttons.forEach(b=>b.disabled=false);}
+}
+buttons.forEach(b=>{b.onclick=()=>choose(b.dataset.choice);});
+function updateCount(){document.getElementById('count').textContent=Array.from(field.value).length+' / 200文字';}
+field.oninput=updateCount;
+document.getElementById('form').onsubmit=async e=>{
+ e.preventDefault();if(Array.from(field.value).length>200){show('理由は200文字以内で入力してください。',true);return;}
+ save.disabled=true;field.disabled=true;alt.disabled=true;
+ try{const result=await request('save',{reason:field.value,altWhen:alt.value,version});version=result.version;notify(result.message);show('',false);}catch(error){notify(error.message,true);show(error.message,true);}finally{save.disabled=false;field.disabled=false;alt.disabled=false;}
+};
+document.getElementById('close').onclick=()=>{if(window.liff&&liff.isInClient())liff.closeWindow();else show('この画面を閉じてLINEのトークに戻ってください。',false);};
+init();
+</script></body></html>
